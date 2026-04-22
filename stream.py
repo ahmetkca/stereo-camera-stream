@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import cv2
 import numpy as np
+from libcamera import Transform
 from picamera2 import Picamera2
 from pathlib import Path
 
@@ -28,8 +29,9 @@ def capture_loop():
     cam1 = Picamera2(1, tuning=tuning)
 
     sensor = {"output_size": SENSOR_SIZE, "bit_depth": 10}
-    cfg0 = cam0.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"}, sensor=sensor)
-    cfg1 = cam1.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"}, sensor=sensor)
+    flip = Transform(hflip=True, vflip=True)
+    cfg0 = cam0.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"}, sensor=sensor, transform=flip)
+    cfg1 = cam1.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"}, sensor=sensor, transform=flip)
 
     cam0.configure(cfg0)
     cam1.configure(cfg1)
@@ -43,8 +45,8 @@ def capture_loop():
     while True:
         t_start = time.monotonic()
 
-        f0 = cv2.cvtColor(cv2.rotate(cam0.capture_array("main"), cv2.ROTATE_180), cv2.COLOR_RGB2BGR)
-        f1 = cv2.cvtColor(cv2.rotate(cam1.capture_array("main"), cv2.ROTATE_180), cv2.COLOR_RGB2BGR)
+        f0 = cam0.capture_array("main")
+        f1 = cam1.capture_array("main")
 
         cv2.putText(f0, "LEFT  (cam0)", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
         cv2.putText(f1, "RIGHT (cam1)", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
