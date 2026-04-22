@@ -8,7 +8,8 @@ import numpy as np
 from picamera2 import Picamera2
 
 PORT = 8080
-RESOLUTION = (640, 480)
+RESOLUTION = (1920, 1080)
+SENSOR_SIZE = (3280, 2464)   # full sensor readout for max FOV, ISP scales to RESOLUTION
 JPEG_QUALITY = 80
 
 latest_frame = None
@@ -21,8 +22,9 @@ def capture_loop():
     cam0 = Picamera2(0)
     cam1 = Picamera2(1)
 
-    cfg0 = cam0.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"})
-    cfg1 = cam1.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"})
+    sensor = {"output_size": SENSOR_SIZE, "bit_depth": 10}
+    cfg0 = cam0.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"}, sensor=sensor)
+    cfg1 = cam1.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"}, sensor=sensor)
 
     cam0.configure(cfg0)
     cam1.configure(cfg1)
@@ -70,7 +72,7 @@ class StreamHandler(BaseHTTPRequestHandler):
     body {{ margin: 0; background: #111; display: flex; flex-direction: column;
            align-items: center; justify-content: center; min-height: 100vh; }}
     h2  {{ color: #eee; font-family: monospace; margin-bottom: 12px; }}
-    img {{ width: 100%; max-width: 1280px; border: 2px solid #333; }}
+    img {{ width: 100%; max-width: 3840px; border: 2px solid #333; }}
   </style>
 </head>
 <body>
