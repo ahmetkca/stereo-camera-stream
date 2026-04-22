@@ -12,6 +12,7 @@ PORT = 8080
 RESOLUTION = (1920, 1080)
 SENSOR_SIZE = (3280, 2464)   # full sensor readout for max FOV, ISP scales to RESOLUTION
 JPEG_QUALITY = 80
+TARGET_FPS = 20
 
 latest_frame = None
 frame_lock = threading.Lock()
@@ -38,9 +39,12 @@ def capture_loop():
 
     print("Both cameras started")
 
+    frame_interval = 1.0 / TARGET_FPS
     while True:
-        f0 = cv2.cvtColor(cv2.rotate(cam0.capture_array(), cv2.ROTATE_180), cv2.COLOR_RGB2BGR)
-        f1 = cv2.cvtColor(cv2.rotate(cam1.capture_array(), cv2.ROTATE_180), cv2.COLOR_RGB2BGR)
+        t_start = time.monotonic()
+
+        f0 = cv2.cvtColor(cv2.rotate(cam0.capture_array("main"), cv2.ROTATE_180), cv2.COLOR_RGB2BGR)
+        f1 = cv2.cvtColor(cv2.rotate(cam1.capture_array("main"), cv2.ROTATE_180), cv2.COLOR_RGB2BGR)
 
         cv2.putText(f0, "LEFT  (cam0)", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
         cv2.putText(f1, "RIGHT (cam1)", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
@@ -53,6 +57,11 @@ def capture_loop():
 
         with frame_lock:
             latest_frame = buf.tobytes()
+
+        elapsed = time.monotonic() - t_start
+        sleep_for = frame_interval - elapsed
+        if sleep_for > 0:
+            time.sleep(sleep_for)
 
 
 class StreamHandler(BaseHTTPRequestHandler):
