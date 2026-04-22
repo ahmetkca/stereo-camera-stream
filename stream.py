@@ -27,8 +27,8 @@ def capture_loop():
     cam1 = Picamera2(1, tuning=tuning)
 
     sensor = {"output_size": SENSOR_SIZE, "bit_depth": 10}
-    cfg0 = cam0.create_video_configuration(main={"size": RESOLUTION, "format": "BGR888"}, sensor=sensor)
-    cfg1 = cam1.create_video_configuration(main={"size": RESOLUTION, "format": "BGR888"}, sensor=sensor)
+    cfg0 = cam0.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"}, sensor=sensor)
+    cfg1 = cam1.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"}, sensor=sensor)
 
     cam0.configure(cfg0)
     cam1.configure(cfg1)
@@ -39,8 +39,8 @@ def capture_loop():
     print("Both cameras started")
 
     while True:
-        f0 = cv2.rotate(cam0.capture_array(), cv2.ROTATE_180)
-        f1 = cv2.rotate(cam1.capture_array(), cv2.ROTATE_180)
+        f0 = cv2.cvtColor(cv2.rotate(cam0.capture_array(), cv2.ROTATE_180), cv2.COLOR_RGB2BGR)
+        f1 = cv2.cvtColor(cv2.rotate(cam1.capture_array(), cv2.ROTATE_180), cv2.COLOR_RGB2BGR)
 
         cv2.putText(f0, "LEFT  (cam0)", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
         cv2.putText(f1, "RIGHT (cam1)", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
