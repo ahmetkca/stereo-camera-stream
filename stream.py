@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import cv2
 import numpy as np
 from picamera2 import Picamera2
+from pathlib import Path
 
 PORT = 8080
 RESOLUTION = (1920, 1080)
@@ -19,8 +20,11 @@ frame_lock = threading.Lock()
 def capture_loop():
     global latest_frame
 
-    cam0 = Picamera2(0)
-    cam1 = Picamera2(1)
+    tuning_file = Path(__file__).parent / "imx219_waveshare.json"
+    tuning = Picamera2.load_tuning_file(str(tuning_file))
+
+    cam0 = Picamera2(0, tuning=tuning)
+    cam1 = Picamera2(1, tuning=tuning)
 
     sensor = {"output_size": SENSOR_SIZE, "bit_depth": 10}
     cfg0 = cam0.create_video_configuration(main={"size": RESOLUTION, "format": "RGB888"}, sensor=sensor)
