@@ -7,6 +7,8 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst, GLib
 
+Gst.init(None)
+
 PORT = 8080
 WIDTH = 1280
 HEIGHT = 720
@@ -129,8 +131,6 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
 
 
 if __name__ == "__main__":
-    Gst.init(None)
-
     # GLib main loop handles GStreamer bus messages in background
     loop = GLib.MainLoop()
     threading.Thread(target=loop.run, daemon=True).start()
