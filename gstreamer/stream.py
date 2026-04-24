@@ -35,11 +35,11 @@ INDEX_HTML = b"""<!DOCTYPE html>
 <body>
   <div class="view">
     <img src="/stream/left">
-    <label>LEFT (cam0) · GStreamer</label>
+    <label>LEFT (cam0) - GStreamer</label>
   </div>
   <div class="view">
     <img src="/stream/right">
-    <label>RIGHT (cam1) · GStreamer</label>
+    <label>RIGHT (cam1) - GStreamer</label>
   </div>
 </body>
 </html>"""
