@@ -14,7 +14,7 @@ Gst.init(None)
 PORT = 8080
 WIDTH = 1280
 HEIGHT = 720
-FRAMERATE = 15
+FRAMERATE = 30
 JPEG_QUALITY = 80
 
 CAM0 = "/base/axi/pcie@1000120000/rp1/i2c@88000/imx219@10"
@@ -61,15 +61,18 @@ class CameraStream:
     def __init__(self, camera_name: str):
         self.frame: bytes | None = None
         self.condition = threading.Condition()
-        self._count = 0
-        self._fps = 0
-        self._t = time.monotonic()
+        # Hot-path counter: only an integer increment in the appsink callback.
+        # A background thread reads and resets this to compute fps.
+        self._raw_count = 0
+        self.fps = 0
 
+        # videoconvert before videoflip ensures I420 input, which all
+        # flip methods support reliably (NV12 + rotate-180 can silently no-op).
         pipeline_str = (
             f"libcamerasrc camera-name={camera_name} ! "
             f"video/x-raw,format=NV12,width={WIDTH},height={HEIGHT},framerate={FRAMERATE}/1 ! "
-            f"videoflip method=rotate-180 ! "
             f"videoconvert ! "
+            f"videoflip method=rotate-180 ! "
             f"jpegenc quality={JPEG_QUALITY} ! "
             f"appsink name=sink emit-signals=true sync=false drop=true max-buffers=1"
         )
@@ -89,24 +92,24 @@ class CameraStream:
             with self.condition:
                 self.frame = data
                 self.condition.notify_all()
-        self._count += 1
-        now = time.monotonic()
-        elapsed = now - self._t
-        if elapsed >= 1.0:
-            self._fps = round(self._count / elapsed)
-            self._count = 0
-            self._t = now
+        self._raw_count += 1  # only work done here for FPS tracking
         return Gst.FlowReturn.OK
-
-    @property
-    def fps(self) -> int:
-        return self._fps
 
     def start(self):
         self._pipeline.set_state(Gst.State.PLAYING)
 
     def stop(self):
         self._pipeline.set_state(Gst.State.NULL)
+
+
+def fps_worker(streams: list, interval: float = 1.0):
+    """Compute fps for all streams once per interval. Runs in its own thread."""
+    while True:
+        time.sleep(interval)
+        for s in streams:
+            count = s._raw_count
+            s._raw_count = 0
+            s.fps = round(count / interval)
 
 
 cam0_stream = CameraStream(CAM0)
@@ -166,6 +169,7 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
 if __name__ == "__main__":
     loop = GLib.MainLoop()
     threading.Thread(target=loop.run, daemon=True).start()
+    threading.Thread(target=fps_worker, args=([cam0_stream, cam1_stream],), daemon=True).start()
 
     cam0_stream.start()
     cam1_stream.start()
