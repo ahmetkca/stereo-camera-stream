@@ -36,13 +36,31 @@ INDEX_HTML = b"""<!DOCTYPE html>
 </head>
 <body>
   <div class="view">
-    <img src="/stream/left">
-    <label>LEFT (cam0) - GStreamer</label>
+    <img id="left" src="/stream/left">
+    <label id="lbl-left">LEFT (cam0)</label>
   </div>
   <div class="view">
-    <img src="/stream/right">
-    <label>RIGHT (cam1) - GStreamer</label>
+    <img id="right" src="/stream/right">
+    <label id="lbl-right">RIGHT (cam1)</label>
   </div>
+  <script>
+    function trackFps(imgId, lblId, name) {
+      const img = document.getElementById(imgId);
+      const lbl = document.getElementById(lblId);
+      let frames = 0, last = Date.now();
+      img.addEventListener('load', () => {
+        frames++;
+        const now = Date.now();
+        if (now - last >= 1000) {
+          lbl.textContent = name + ' ' + frames + ' fps';
+          frames = 0;
+          last = now;
+        }
+      });
+    }
+    trackFps('left',  'lbl-left',  'LEFT (cam0)');
+    trackFps('right', 'lbl-right', 'RIGHT (cam1)');
+  </script>
 </body>
 </html>"""
 
@@ -57,6 +75,7 @@ class CameraStream:
         pipeline_str = (
             f"libcamerasrc camera-name={camera_name} ! "
             f"video/x-raw,format=NV12,width={WIDTH},height={HEIGHT},framerate={FRAMERATE}/1 ! "
+            f"videoflip method=rotate-180 ! "
             f"videoconvert ! "
             f"jpegenc quality={JPEG_QUALITY} ! "
             f"appsink name=sink emit-signals=true sync=false drop=true max-buffers=1"
