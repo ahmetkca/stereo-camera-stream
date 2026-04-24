@@ -59,7 +59,7 @@ output1 = CameraOutput()
 
 
 def start_cameras():
-    tuning_file = Path(__file__).parent / "imx219_waveshare.json"
+    tuning_file = Path(__file__).parent.parent / "shared" / "imx219_waveshare.json"
     tuning = Picamera2.load_tuning_file(str(tuning_file))
 
     cam0 = Picamera2(0, tuning=tuning)
