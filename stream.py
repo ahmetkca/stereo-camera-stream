@@ -82,8 +82,8 @@ def start_cameras():
     cam0.configure(cfg0)
     cam1.configure(cfg1)
 
-    cam0.start_recording(MJPEGEncoder(q=JPEG_QUALITY), FileOutput(output0))
-    cam1.start_recording(MJPEGEncoder(q=JPEG_QUALITY), FileOutput(output1))
+    cam0.start_recording(MJPEGEncoder(), FileOutput(output0))
+    cam1.start_recording(MJPEGEncoder(), FileOutput(output1))
 
     print("Both cameras started")
 
