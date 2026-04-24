@@ -1,6 +1,6 @@
 import pytest
 
-from publisher import PublisherConfig, build_message
+from publisher import PublisherConfig, build_message, get_capture_colorspace, get_main_stream_format
 
 
 def test_build_message_matches_lerobot_schema():
@@ -30,3 +30,11 @@ def test_duplicate_camera_names_are_rejected():
             jpeg_quality=80,
             log_level="INFO",
         )
+
+
+def test_picamera2_main_stream_format_matches_known_good_rgb_path():
+    assert get_main_stream_format() == "RGB888"
+
+
+def test_jpeg_encoder_colorspace_matches_known_good_rgb_path():
+    assert get_capture_colorspace() == "BGR"

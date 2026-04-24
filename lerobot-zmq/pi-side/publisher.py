@@ -68,11 +68,19 @@ def build_message(encoded_frames: dict[str, str], timestamps: dict[str, float]) 
     }
 
 
+def get_main_stream_format() -> str:
+    return "RGB888"
+
+
+def get_capture_colorspace() -> str:
+    return "BGR"
+
+
 def encode_frame_to_base64_jpeg(frame: Any, quality: int) -> str:
     try:
         import simplejpeg
 
-        encoded = simplejpeg.encode_jpeg(frame, quality=quality, colorspace="BGR")
+        encoded = simplejpeg.encode_jpeg(frame, quality=quality, colorspace=get_capture_colorspace())
     except ImportError:
         import cv2
 
@@ -105,7 +113,7 @@ def start_stereo_cameras(config: PublisherConfig):
     right_cam = Picamera2(config.right_index, tuning=tuning)
     flip = Transform(hflip=True, vflip=True)
     sensor = {"output_size": SENSOR_SIZE, "bit_depth": 10}
-    main = {"size": (config.width, config.height), "format": "BGR888"}
+    main = {"size": (config.width, config.height), "format": get_main_stream_format()}
     controls = {"FrameRate": config.fps}
 
     left_cfg = left_cam.create_video_configuration(main=main, sensor=sensor, transform=flip, controls=controls)
