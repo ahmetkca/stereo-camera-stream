@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+import json
 import socketserver
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import gi
@@ -15,7 +17,6 @@ HEIGHT = 720
 FRAMERATE = 15
 JPEG_QUALITY = 80
 
-# Camera device names (libcamera pipeline handler IDs for Pi 5)
 CAM0 = "/base/axi/pcie@1000120000/rp1/i2c@88000/imx219@10"
 CAM1 = "/base/axi/pcie@1000120000/rp1/i2c@80000/imx219@10"
 
@@ -36,41 +37,33 @@ INDEX_HTML = b"""<!DOCTYPE html>
 </head>
 <body>
   <div class="view">
-    <img id="left" src="/stream/left">
+    <img src="/stream/left">
     <label id="lbl-left">LEFT (cam0)</label>
   </div>
   <div class="view">
-    <img id="right" src="/stream/right">
+    <img src="/stream/right">
     <label id="lbl-right">RIGHT (cam1)</label>
   </div>
   <script>
-    function trackFps(imgId, lblId, name) {
-      const img = document.getElementById(imgId);
-      const lbl = document.getElementById(lblId);
-      let frames = 0, last = Date.now();
-      img.addEventListener('load', () => {
-        frames++;
-        const now = Date.now();
-        if (now - last >= 1000) {
-          lbl.textContent = name + ' ' + frames + ' fps';
-          frames = 0;
-          last = now;
-        }
-      });
-    }
-    trackFps('left',  'lbl-left',  'LEFT (cam0)');
-    trackFps('right', 'lbl-right', 'RIGHT (cam1)');
+    setInterval(async () => {
+      try {
+        const d = await fetch('/fps').then(r => r.json());
+        document.getElementById('lbl-left').textContent  = 'LEFT (cam0)  ' + d.left  + ' fps';
+        document.getElementById('lbl-right').textContent = 'RIGHT (cam1) ' + d.right + ' fps';
+      } catch {}
+    }, 1000);
   </script>
 </body>
 </html>"""
 
 
 class CameraStream:
-    """Wraps a single GStreamer pipeline and exposes the latest JPEG frame."""
-
     def __init__(self, camera_name: str):
         self.frame: bytes | None = None
         self.condition = threading.Condition()
+        self._count = 0
+        self._fps = 0
+        self._t = time.monotonic()
 
         pipeline_str = (
             f"libcamerasrc camera-name={camera_name} ! "
@@ -96,7 +89,18 @@ class CameraStream:
             with self.condition:
                 self.frame = data
                 self.condition.notify_all()
+        self._count += 1
+        now = time.monotonic()
+        elapsed = now - self._t
+        if elapsed >= 1.0:
+            self._fps = round(self._count / elapsed)
+            self._count = 0
+            self._t = now
         return Gst.FlowReturn.OK
+
+    @property
+    def fps(self) -> int:
+        return self._fps
 
     def start(self):
         self._pipeline.set_state(Gst.State.PLAYING)
@@ -121,6 +125,8 @@ class StreamHandler(BaseHTTPRequestHandler):
             self._serve_mjpeg(cam0_stream)
         elif self.path == "/stream/right":
             self._serve_mjpeg(cam1_stream)
+        elif self.path == "/fps":
+            self._serve_fps()
         else:
             self.send_error(404)
 
@@ -141,6 +147,14 @@ class StreamHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    def _serve_fps(self):
+        data = json.dumps({"left": cam0_stream.fps, "right": cam1_stream.fps}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def log_message(self, *_):
         pass
 
@@ -150,7 +164,6 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
 
 
 if __name__ == "__main__":
-    # GLib main loop handles GStreamer bus messages in background
     loop = GLib.MainLoop()
     threading.Thread(target=loop.run, daemon=True).start()
 
