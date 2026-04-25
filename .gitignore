@@ -4,6 +4,7 @@ __pycache__/
 .env
 **/.venv/
 .worktrees/
+.context/
 *.jpg
 *.png
 *.h264
