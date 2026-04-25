@@ -13,6 +13,8 @@ from typing import Any
 
 import zmq
 
+from pipeline_stats import PipelineStats, format_summary
+
 LOGGER = logging.getLogger("lerobot_zmq_pi")
 SENSOR_SIZE = (3280, 2464)
 
@@ -30,6 +32,7 @@ class PublisherConfig:
     right_camera_name: str
     jpeg_quality: int
     log_level: str
+    stats_interval: int
 
     def __post_init__(self) -> None:
         if self.left_camera_name == self.right_camera_name:
@@ -42,6 +45,22 @@ class PublisherConfig:
             raise ValueError("FPS must be positive.")
         if not 1 <= self.jpeg_quality <= 100:
             raise ValueError("JPEG quality must be between 1 and 100.")
+        if self.stats_interval < 0:
+            raise ValueError("Stats interval must be zero or positive.")
+
+
+@dataclass
+class CapturedFrame:
+    frame: Any
+    wall_time_s: float
+    sensor_timestamp_ns: int | None
+
+    @property
+    def metadata(self) -> dict[str, float | int]:
+        data: dict[str, float | int] = {"wall_time_s": self.wall_time_s}
+        if self.sensor_timestamp_ns is not None:
+            data["sensor_timestamp_ns"] = self.sensor_timestamp_ns
+        return data
 
 
 def parse_args(argv: list[str] | None = None) -> PublisherConfig:
@@ -57,15 +76,28 @@ def parse_args(argv: list[str] | None = None) -> PublisherConfig:
     parser.add_argument("--right-camera-name", default="right")
     parser.add_argument("--jpeg-quality", type=int, default=80)
     parser.add_argument("--log-level", default="INFO")
+    parser.add_argument(
+        "--stats-interval",
+        type=int,
+        default=0,
+        help="Log aggregate pipeline timings every N frames. Disabled when 0.",
+    )
     args = parser.parse_args(argv)
     return PublisherConfig(**vars(args))
 
 
-def build_message(encoded_frames: dict[str, str], timestamps: dict[str, float]) -> dict[str, dict[str, Any]]:
-    return {
+def build_message(
+    encoded_frames: dict[str, str],
+    timestamps: dict[str, float],
+    metadata: dict[str, dict[str, float | int]] | None = None,
+) -> dict[str, dict[str, Any]]:
+    message = {
         "timestamps": timestamps,
         "images": encoded_frames,
     }
+    if metadata is not None:
+        message["metadata"] = metadata
+    return message
 
 
 def get_main_stream_format() -> str:
@@ -89,6 +121,23 @@ def encode_frame_to_base64_jpeg(frame: Any, quality: int) -> str:
             raise RuntimeError("Failed to JPEG-encode frame.")
         encoded = bytes(buffer)
     return base64.b64encode(encoded).decode("utf-8")
+
+
+def capture_frame_with_metadata(cam: Any, wall_time=time.time) -> CapturedFrame:
+    request = cam.capture_request()
+    try:
+        frame = request.make_array("main")
+        captured_wall_time = wall_time()
+        metadata = request.get_metadata()
+    finally:
+        request.release()
+
+    sensor_timestamp_ns = metadata.get("SensorTimestamp")
+    return CapturedFrame(
+        frame=frame,
+        wall_time_s=captured_wall_time,
+        sensor_timestamp_ns=int(sensor_timestamp_ns) if sensor_timestamp_ns is not None else None,
+    )
 
 
 def _import_picamera2_modules():
@@ -147,15 +196,21 @@ def make_socket(config: PublisherConfig) -> tuple[zmq.Context, zmq.Socket]:
 def publish_loop(config: PublisherConfig) -> None:
     context, socket = make_socket(config)
     left_cam, right_cam = start_stereo_cameras(config)
+    stats = PipelineStats(interval_frames=config.stats_interval)
     first_left = True
     first_right = True
 
     try:
         while True:
-            left_frame = left_cam.capture_array("main")
-            left_ts = time.time()
-            right_frame = right_cam.capture_array("main")
-            right_ts = time.time()
+            if stats.enabled:
+                loop_start = time.perf_counter_ns()
+                left_capture = capture_frame_with_metadata(left_cam)
+                left_capture_end = time.perf_counter_ns()
+                right_capture = capture_frame_with_metadata(right_cam)
+                right_capture_end = time.perf_counter_ns()
+            else:
+                left_capture = capture_frame_with_metadata(left_cam)
+                right_capture = capture_frame_with_metadata(right_cam)
 
             if first_left:
                 LOGGER.info("First frame captured for %s", config.left_camera_name)
@@ -164,21 +219,74 @@ def publish_loop(config: PublisherConfig) -> None:
                 LOGGER.info("First frame captured for %s", config.right_camera_name)
                 first_right = False
 
-            message = build_message(
-                encoded_frames={
-                    config.left_camera_name: encode_frame_to_base64_jpeg(left_frame, config.jpeg_quality),
-                    config.right_camera_name: encode_frame_to_base64_jpeg(right_frame, config.jpeg_quality),
-                },
-                timestamps={
-                    config.left_camera_name: left_ts,
-                    config.right_camera_name: right_ts,
-                },
-            )
+            if stats.enabled:
+                left_encoded = encode_frame_to_base64_jpeg(left_capture.frame, config.jpeg_quality)
+                left_encode_end = time.perf_counter_ns()
+                right_encoded = encode_frame_to_base64_jpeg(right_capture.frame, config.jpeg_quality)
+                right_encode_end = time.perf_counter_ns()
+                message = build_message(
+                    encoded_frames={
+                        config.left_camera_name: left_encoded,
+                        config.right_camera_name: right_encoded,
+                    },
+                    timestamps={
+                        config.left_camera_name: left_capture.wall_time_s,
+                        config.right_camera_name: right_capture.wall_time_s,
+                    },
+                    metadata={
+                        config.left_camera_name: left_capture.metadata,
+                        config.right_camera_name: right_capture.metadata,
+                    },
+                )
+            else:
+                message = build_message(
+                    encoded_frames={
+                        config.left_camera_name: encode_frame_to_base64_jpeg(left_capture.frame, config.jpeg_quality),
+                        config.right_camera_name: encode_frame_to_base64_jpeg(right_capture.frame, config.jpeg_quality),
+                    },
+                    timestamps={
+                        config.left_camera_name: left_capture.wall_time_s,
+                        config.right_camera_name: right_capture.wall_time_s,
+                    },
+                    metadata={
+                        config.left_camera_name: left_capture.metadata,
+                        config.right_camera_name: right_capture.metadata,
+                    },
+                )
+
+            if stats.enabled:
+                payload = json.dumps(message)
+                json_end = time.perf_counter_ns()
+            else:
+                payload = json.dumps(message)
 
             try:
-                socket.send_string(json.dumps(message), zmq.NOBLOCK)
+                socket.send_string(payload, zmq.NOBLOCK)
             except zmq.Again:
                 LOGGER.debug("Dropped one publish cycle because the ZMQ send buffer was full.")
+
+            if stats.enabled:
+                send_end = time.perf_counter_ns()
+                sample = {
+                    "left_capture_ms": (left_capture_end - loop_start) / 1_000_000,
+                    "right_capture_ms": (right_capture_end - left_capture_end) / 1_000_000,
+                    "capture_total_ms": (right_capture_end - loop_start) / 1_000_000,
+                    "wall_skew_ms": (right_capture.wall_time_s - left_capture.wall_time_s) * 1000,
+                    "left_encode_ms": (left_encode_end - right_capture_end) / 1_000_000,
+                    "right_encode_ms": (right_encode_end - left_encode_end) / 1_000_000,
+                    "encode_total_ms": (right_encode_end - right_capture_end) / 1_000_000,
+                    "json_dump_ms": (json_end - right_encode_end) / 1_000_000,
+                    "zmq_send_ms": (send_end - json_end) / 1_000_000,
+                    "loop_total_ms": (send_end - loop_start) / 1_000_000,
+                    "payload_bytes": len(payload),
+                }
+                if left_capture.sensor_timestamp_ns is not None and right_capture.sensor_timestamp_ns is not None:
+                    sample["sensor_skew_ms"] = (
+                        right_capture.sensor_timestamp_ns - left_capture.sensor_timestamp_ns
+                    ) / 1_000_000
+                summary = stats.record(sample)
+                if summary is not None:
+                    LOGGER.info(format_summary(summary))
     finally:
         left_cam.stop()
         right_cam.stop()
