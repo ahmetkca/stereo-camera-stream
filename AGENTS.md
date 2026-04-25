@@ -5,8 +5,25 @@ This repository is the canonical project root for the Raspberry Pi 5 Waveshare I
 ## Project Goal
 
 - Build and compare stereo camera streaming implementations for the Waveshare IMX219-83 stereo camera on Raspberry Pi 5.
-- The main robotics target is LeRobot data collection and teleoperation for an open-source SO-ARM101/SO101 setup with one follower arm and one leader arm.
+- The main robotics target is LeRobot data collection and teleoperation for an open-source SO-ARM101/SO101 setup.
 - The most important current implementation is `lerobot-zmq/`, which publishes stereo frames in the JSON-over-ZeroMQ schema expected by LeRobot's `ZMQCamera`.
+
+## Robotics Setup
+
+The intended end state is a bimanual SO-ARM101/SO101-style setup:
+
+- Two follower arms sit side by side like the left and right arms of a body.
+- Each follower arm will have its own camera mounted near the end effector, claw, or gripper.
+- A top-down stereo camera looks over the workspace and sees the full scene in front of both follower arms.
+- Two leader arms provide bimanual teleoperation for LeRobot data collection, evaluation, and policy development.
+
+The current hardware state is smaller:
+
+- One follower arm.
+- One leader arm.
+- One top-down stereo camera looking over the workspace.
+
+When adding LeRobot commands, camera names, dataset feature names, or ZMQ message keys, preserve a path from the current single-arm setup to the intended bimanual setup. Prefer names that can scale cleanly, such as `left_wrist`, `right_wrist`, `overhead_left`, and `overhead_right`, rather than names that only make sense for a single-arm prototype.
 
 ## Local Environment
 
